@@ -1,8 +1,9 @@
-use std::{env, fs, path::PathBuf};
 use anyhow::{Result, anyhow};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
 use std::process;
+use std::{env, fs, path::PathBuf};
 
 const CONF_DIR: &str = ".config";
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -32,7 +33,12 @@ impl Config {
 
         match serde_yaml::to_string(&placeholder_config) {
             Ok(s) => Ok(s.to_string()),
-            Err(e) => return Err(anyhow!("Could not generate placeholder config to show. {}", e))
+            Err(e) => {
+                return Err(anyhow!(
+                    "Could not generate placeholder config to show. {}",
+                    e
+                ));
+            }
         }
     }
 
@@ -40,7 +46,7 @@ impl Config {
         // Try to get home folder
         let home_folder = match env::home_dir() {
             Some(h) => h,
-            None => return Err(anyhow!("Could not determine $HOME"))
+            None => return Err(anyhow!("Could not determine $HOME")),
         };
 
         // Get final dir
@@ -52,38 +58,60 @@ impl Config {
         // Try to create the final dir (this is idempotent so it's chill to run every time)
         match fs::create_dir_all(&conf_path) {
             Ok(_) => (),
-            Err(e) => return Err(anyhow!("Could not create config dir at {:#?}: {}", &conf_path, e))
+            Err(e) => {
+                return Err(anyhow!(
+                    "Could not create config dir at {:#?}: {}",
+                    &conf_path,
+                    e
+                ));
+            }
         }
 
         // Try to create the final file if it doesn't exist
-        match fs::OpenOptions::new().create_new(true).write(true).open(&conf_file) {
+        match fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&conf_file)
+        {
             Ok(_) => {
                 // Check if the placeholder config can be serialized
                 if let Ok(placeholder_config) = Config::placeholder() {
                     println!(
                         "Created new config file at {:?}. Please populate it with the following fields:\n\n{}",
-                        conf_file,
-                        placeholder_config,
+                        conf_file, placeholder_config,
                     );
                     process::exit(0);
                 }
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => (),
-            Err(e) => return Err(anyhow!("Could not create config file {:?}: {}", conf_file, e)),
+            Err(e) => {
+                return Err(anyhow!(
+                    "Could not create config file {:?}: {}",
+                    conf_file,
+                    e
+                ));
+            }
         }
 
         // Try to read the conf file to string
         let conf_str = match fs::read_to_string(&conf_file) {
             Ok(c) => c,
-            Err(e) => return Err(anyhow!("Could not read config from {:#?}, {}", &conf_file, e))
+            Err(e) => {
+                return Err(anyhow!(
+                    "Could not read config from {:#?}, {}",
+                    &conf_file,
+                    e
+                ));
+            }
         };
 
         // Try to parse the string to actual YAML
         let conf: Config = match serde_yaml::from_str(&conf_str) {
             Ok(v) => v,
-            Err(e) => return Err(anyhow!("Could not parse config from YAML file: {}", e))
+            Err(e) => return Err(anyhow!("Could not parse config from YAML file: {}", e)),
         };
 
+        info!("Config loaded.");
         Ok(conf)
     }
 }

@@ -1,8 +1,13 @@
 mod config;
+mod logger;
 
 use crate::config::Config;
+use crate::logger::init_logger;
+use anyhow::Result;
 
-fn main() {
-    // Step 1: load config
-    let config = Config::load();
+fn main() -> Result<()> {
+    let _ = init_logger()?;
+    let _config = Config::load()?;
+
+    Ok(())
 }
