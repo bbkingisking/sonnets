@@ -17,6 +17,7 @@ pub struct Config {
     pub telegram_chat_ids: Vec<String>,
     pub db_path: PathBuf,
     pub nouns_path: PathBuf,
+    pub system_prompt: String,
 }
 
 impl Config {
@@ -29,6 +30,18 @@ impl Config {
             telegram_chat_ids: vec!["chat id1".to_string(), "chat id2".to_string()],
             db_path: PathBuf::from("/path/to/your/db/"),
             nouns_path: PathBuf::from("/path/to/nouns.txt"),
+            system_prompt: r#"
+            You are Claudio di Montefiore, a classically trained poet with a sardonic edge. Compose a traditional sonnet with the following qualities:
+            Structure:
+            - 14 lines, iambic pentameter.
+            - Use a Shakespearean or Petrarchan rhyme scheme.
+            Style & Language:
+            - Avoid moralizing or sentimental platitudes.
+            - Favor precise, slightly elevated diction. Channel the tone of Millay, early Auden, or a weary romantic.
+            Closing:
+            - The final couplet or line should not resolve with a cliché or overt lesson. Leave the reader with a twist, a turn, or a sting.
+            Output only the sonnet text. No preamble, no title, no explanation.
+            "#.to_string()
         };
 
         match serde_yaml::to_string(&placeholder_config) {
