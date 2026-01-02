@@ -76,3 +76,33 @@ pub async fn validate_anthropic_config(conf: &Config) -> Result<()> {
 
     Ok(())
 }
+
+pub async fn validate_telegram_config(conf: &Config) -> Result<()> {
+    let url = format!(
+        "https://api.telegram.org/bot{}/getMe",
+        &conf.telegram_bot_token
+    );
+    let client = reqwest::Client::new();
+
+    let res = match client.post(url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(anyhow!(
+                "Failed to get a response from Telegram's /getMe endpoint: {}",
+                e
+            ));
+        }
+    };
+
+    match res.error_for_status() {
+        Ok(_) => info!("Telegram bot token is valid."),
+        Err(e) => {
+            return Err(anyhow!(
+                "Received an error when checking Telegram bot token: {}",
+                e
+            ));
+        }
+    };
+
+    Ok(())
+}

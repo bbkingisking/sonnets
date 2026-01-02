@@ -4,14 +4,14 @@ mod validate;
 
 use crate::config::Config;
 use crate::logger::init_logger;
-use crate::validate::validate_anthropic_config;
+use crate::validate::{validate_anthropic_config, validate_telegram_config};
 use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _ = init_logger()?;
+    init_logger()?;
     let conf = Config::load()?;
-    let _ = validate_anthropic_config(&conf).await?;
-
+    validate_anthropic_config(&conf).await?;
+    validate_telegram_config(&conf).await?;
     Ok(())
 }
