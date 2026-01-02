@@ -5,7 +5,7 @@ use std::io::ErrorKind;
 use std::process;
 use std::{env, fs, path::PathBuf};
 
-const CONF_DIR: &str = ".config";
+const CONF_DIR: &str = "config";
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 // The main Config struct, change the fields here and the compiler will guide you to the rest
@@ -50,7 +50,7 @@ impl Config {
         };
 
         // Get final dir
-        let conf_path = home_folder.join(CONF_DIR).join(PKG_NAME);
+        let conf_path = home_folder.join("state").join(PKG_NAME).join(CONF_DIR);
 
         // Get final dir + filename
         let conf_file = conf_path.join("config.yaml");
