@@ -14,7 +14,7 @@ pub struct Config {
     pub api_key: String,
     pub model: String,
     pub telegram_bot_token: String,
-    pub telegram_chat_ids: Vec<String>,
+    pub telegram_chat_ids: Vec<i64>,
     pub db_path: PathBuf,
     pub nouns_path: PathBuf,
     pub system_prompt: String,
@@ -27,7 +27,7 @@ impl Config {
             api_key: String::from("Your Anthropic API key here"),
             model: String::from("The LLM model to use, for example: claude-opus-4-5-20251101"),
             telegram_bot_token: String::from("The telegram bot token"),
-            telegram_chat_ids: vec!["chat id1".to_string(), "chat id2".to_string()],
+            telegram_chat_ids: vec![31513, 535151],
             db_path: PathBuf::from("/path/to/your/db/"),
             nouns_path: PathBuf::from("/path/to/nouns.txt"),
             system_prompt: r#"

@@ -4,14 +4,16 @@ mod generate_sonnet;
 mod logger;
 mod nouns;
 mod validate;
+mod telegram;
 
 use crate::config::Config;
 use crate::db::Db;
 use crate::generate_sonnet::generate_sonnet;
 use crate::logger::init_logger;
 use crate::nouns::load_noun;
+use crate::telegram::send_telegram_message;
 use crate::validate::{validate_anthropic_config, validate_telegram_config};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,10 +39,10 @@ async fn main() -> Result<()> {
     let sonnet = generate_sonnet(&conf, noun).await?;
 
     // Write sonnet to DB
-    match db.write_sonnet(&sonnet) {
-        Ok(_) => (),
-        Err(e) => return Err(anyhow!("Could not write the sonnet to the database: {}", e))
-    }
+    db.write_sonnet(&sonnet)?;
+
+    // Send sonnet via telegram
+    send_telegram_message(&conf, &sonnet).await?;
 
     Ok(())
 }
