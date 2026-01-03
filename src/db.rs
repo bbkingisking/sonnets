@@ -58,6 +58,7 @@ impl Db {
                 ":prompt": sonnet.prompt,
             }
         )?;
+        info!("Successfully saved sonnet to database.");
         Ok(())
     }
 }

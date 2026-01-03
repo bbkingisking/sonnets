@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::config::Config;
 use anyhow::{Result, anyhow};
 use chrono::{Local, NaiveDateTime};
+use log::info;
 use reqwest::{Client, header::{self, CONTENT_TYPE, HeaderValue}};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -50,6 +51,7 @@ pub async fn generate_sonnet(conf: &Config, noun: Option<String>) -> Result<Sonn
         Err(e) => return Err(anyhow!("Could not deserialize the response from Anthropic's Batches API: {}. Here is a dump: {}", e, res))
     };
 
+    info!("Batch initialized succesfully, monitoring every 5 minutes for response now…");
     // Poll the Batches API until it is finished
     let sonnet = match poll_batch(&batch_response, conf, noun).await {
         Ok(s) => s,
