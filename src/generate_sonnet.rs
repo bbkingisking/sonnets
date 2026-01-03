@@ -40,12 +40,14 @@ pub async fn generate_sonnet(conf: &Config, noun: Option<String>) -> Result<Sonn
         .post("https://api.anthropic.com/v1/messages/batches")
         .json(&body)
         .send()
+        .await?
+        .text()
         .await?;
 
     // Parse the response from Batches API
-    let batch_response: BatchResponse = match res.json().await {
+    let batch_response: BatchResponse = match serde_json::from_str(&res) {
         Ok(b) => b,
-        Err(e) => return Err(anyhow!("Could not deserialize the response from Anthropic's Batches API: {}", e))
+        Err(e) => return Err(anyhow!("Could not deserialize the response from Anthropic's Batches API: {}. Here is a dump: {}", e, res))
     };
 
     // Poll the Batches API until it is finished
@@ -59,10 +61,9 @@ pub async fn generate_sonnet(conf: &Config, noun: Option<String>) -> Result<Sonn
 
 // Helper to generate the JSON body for the request
 async fn generate_body(conf: &Config, nouns: &Option<String>) -> Result<AnthropicBatch> {
-    // Get system prompt from config
-    let system_prompt = AnthropicRequestParamsMessage {
-        role: "system".to_string(),
-        content: conf.system_prompt.clone(),
+    let generic_user_prompt = AnthropicRequestParamsMessage {
+        role: "user".to_string(),
+        content: "Compose a sonnet.".to_string(),
     };
 
     // If there is a noun, create a user prompt with it
@@ -78,7 +79,7 @@ async fn generate_body(conf: &Config, nouns: &Option<String>) -> Result<Anthropi
     let mut messages: Vec<AnthropicRequestParamsMessage> = Vec::new();
 
     // Push the system prompt
-    messages.push(system_prompt);
+    messages.push(generic_user_prompt);
 
     // If there is a user prompt, push it
     if let Some(up) = user_prompt {
@@ -87,8 +88,9 @@ async fn generate_body(conf: &Config, nouns: &Option<String>) -> Result<Anthropi
 
     // Put everything together into a higher struct
     let params = AnthropicRequestParams {
-        max_tokens: 1000u32,
         model: conf.model.clone(),
+        max_tokens: 1000u32,
+        system: conf.system_prompt.clone(),
         messages,
     };
 
@@ -139,7 +141,9 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
     };
 
     // If we have exited the loop, it means the generation has ended. We can get the result now
-    let results_url = &batch_response.results_url;
+    let Some(results_url) = &batch_response.results_url else {
+        return Err(anyhow!("Batch ended but can't find results_url field"))
+    };
 
     // Get the result as a generic JSON Value
     let res: Value = client
@@ -232,6 +236,7 @@ struct AnthropicRequest {
 struct AnthropicRequestParams {
     max_tokens: u32,
     model: String,
+    system: String,
     messages: Vec<AnthropicRequestParamsMessage>,
 }
 
@@ -245,7 +250,7 @@ struct AnthropicRequestParamsMessage {
 struct BatchResponse {
     id: String,
     processing_status: String,
-    results_url: String,
+    results_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
