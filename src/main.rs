@@ -11,7 +11,7 @@ use crate::generate_sonnet::generate_sonnet;
 use crate::logger::init_logger;
 use crate::nouns::load_noun;
 use crate::validate::{validate_anthropic_config, validate_telegram_config};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -35,5 +35,12 @@ async fn main() -> Result<()> {
 
     // Generate sonnet
     let sonnet = generate_sonnet(&conf, noun).await?;
+
+    // Write sonnet to DB
+    match db.write_sonnet(&sonnet) {
+        Ok(_) => (),
+        Err(e) => return Err(anyhow!("Could not write the sonnet to the database: {}", e))
+    }
+
     Ok(())
 }

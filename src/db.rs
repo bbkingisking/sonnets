@@ -1,10 +1,10 @@
-use crate::config::Config;
+use crate::{config::Config, generate_sonnet::Sonnet};
 use anyhow::{Result, anyhow};
 use log::info;
 
 use std::fs;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, named_params};
 
 const SCHEMA_SQL: &str = include_str!("../schema.sql");
 
@@ -44,5 +44,20 @@ impl Db {
 
         info!("Database loaded.");
         Ok(Db { conn })
+    }
+
+    pub fn write_sonnet(&self, sonnet: &Sonnet) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO sonnets (author, content, created_at, noun, prompt)
+             VALUES (:author, :content, :created_at, :noun, :prompt)",
+            named_params! {
+                ":author": sonnet.author,
+                ":content": sonnet.content,
+                ":created_at": sonnet.created_at,
+                ":noun": sonnet.noun,
+                ":prompt": sonnet.prompt,
+            }
+        )?;
+        Ok(())
     }
 }

@@ -10,7 +10,7 @@ ftail = "0.3.1"
 log = "0.4.29"
 rand = "0.9.2"
 reqwest = { version = "0.13.1", features = ["json"] }
-rusqlite = "0.38.0"
+rusqlite = { version = "0.38.0", features = ["chrono"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
 serde_yaml = "0.9.34"
