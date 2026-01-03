@@ -1,12 +1,15 @@
 mod config;
 mod db;
+mod generate_sonnet;
 mod logger;
 mod nouns;
 mod validate;
+
 use crate::config::Config;
 use crate::db::Db;
+use crate::generate_sonnet::generate_sonnet;
 use crate::logger::init_logger;
-use crate::nouns::load_nouns;
+use crate::nouns::load_noun;
 use crate::validate::{validate_anthropic_config, validate_telegram_config};
 use anyhow::Result;
 
@@ -25,9 +28,12 @@ async fn main() -> Result<()> {
     validate_telegram_config(&conf).await?;
 
     // Load nouns (optional)
-    let nouns = load_nouns(&conf)?;
+    let noun = load_noun(&conf)?;
 
     // Load DB
     let db = Db::init_db(&conf)?;
+
+    // Generate sonnet
+    let sonnet = generate_sonnet(&conf, noun).await?;
     Ok(())
 }
