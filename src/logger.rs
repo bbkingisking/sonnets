@@ -35,7 +35,6 @@ pub fn init_logger() -> Result<()> {
 
     // Initialize the logger
     match Ftail::new()
-        .console(LevelFilter::Info)
         .single_file(&logs_file, true, LevelFilter::Info)
         .init()
     {

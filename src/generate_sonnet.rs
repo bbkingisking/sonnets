@@ -195,6 +195,8 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
     // Set created_at to the current time
     let created_at: NaiveDateTime = Local::now().naive_local();
 
+    info!("Batch finished. Sonnet deserialized.");
+
     Ok(Sonnet {
         author,
         prompt: conf.system_prompt.to_owned(),
