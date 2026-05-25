@@ -33,7 +33,7 @@ fn xdg_config_home() -> Result<PathBuf> {
     Ok(home.join(".config"))
 }
 
-fn xdg_state_home() -> Result<PathBuf> {
+fn xdg_data_home() -> Result<PathBuf> {
     if let Ok(val) = env::var("XDG_DATA_HOME") {
         return Ok(PathBuf::from(val));
     }
@@ -126,7 +126,7 @@ impl Config {
             .map_err(|e| anyhow!("Could not parse TELEGRAM_CHAT_IDS as comma-separated i64s: {}", e))?;
 
         // Derive state paths from XDG_DATA_HOME
-        let state_dir = xdg_state_home()?.join(PKG_NAME);
+        let state_dir = xdg_data_home()?.join(PKG_NAME);
         let db_path = state_dir.join("sonnets.db");
         let nouns_path = state_dir.join("nouns.txt");
 
