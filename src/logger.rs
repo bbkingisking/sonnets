@@ -5,23 +5,23 @@ use log::LevelFilter;
 use log::info;
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 
-const LOGS_DIR: &str = "logs";
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
+fn xdg_state_home() -> Result<PathBuf> {
+    if let Ok(val) = env::var("XDG_DATA_HOME") {
+        return Ok(PathBuf::from(val));
+    }
+    let home = env::home_dir().ok_or_else(|| anyhow!("Could not determine $HOME"))?;
+    Ok(home.join(".local").join("state"))
+}
+
 pub fn init_logger() -> Result<()> {
-    let home_folder = match env::home_dir() {
-        Some(h) => h,
-        None => return Err(anyhow!("Could not determine $HOME")),
-    };
+    let logs_path = xdg_state_home()?.join(PKG_NAME);
 
-    // Get final dir
-    let logs_path = home_folder.join("state").join(PKG_NAME).join(LOGS_DIR);
-
-    // Get final dir + filename
     let logs_file = logs_path.join(format!("{}.log", PKG_NAME));
 
-    // Try to create the final dir (this is idempotent so it's chill to run every time)
     match fs::create_dir_all(&logs_path) {
         Ok(_) => (),
         Err(e) => {
@@ -33,7 +33,6 @@ pub fn init_logger() -> Result<()> {
         }
     }
 
-    // Initialize the logger
     match Ftail::new()
         .single_file(&logs_file, true, LevelFilter::Info)
         .init()
