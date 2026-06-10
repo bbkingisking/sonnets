@@ -41,6 +41,18 @@ fn xdg_data_home() -> Result<PathBuf> {
     Ok(home.join(".local").join("state"))
 }
 
+/// Read a secret from a systemd credential file if `$CREDENTIALS_DIRECTORY` is set,
+/// otherwise fall back to the given environment variable.
+fn read_secret(credential_name: &str, env_var: &str) -> Result<String> {
+    if let Ok(cred_dir) = env::var("CREDENTIALS_DIRECTORY") {
+        let path = PathBuf::from(cred_dir).join(credential_name);
+        return fs::read_to_string(&path)
+            .map(|s| s.trim_end_matches('\n').trim_end_matches('\r').to_string())
+            .map_err(|e| anyhow!("Could not read credential file {:?}: {}", path, e));
+    }
+    env::var(env_var).map_err(|_| anyhow!("Missing environment variable: {}", env_var))
+}
+
 impl Config {
     fn placeholder() -> Result<String> {
         let placeholder = YamlConfig {
@@ -82,7 +94,8 @@ impl Config {
                 if let Ok(placeholder) = Config::placeholder() {
                     println!(
                         "Created new config file at {:?}. Please populate it with the following fields:\n\n\
-                         Also set these environment variables:\n  \
+                         Secrets are read from systemd credential files (via $CREDENTIALS_DIRECTORY) if available,\n\
+                         otherwise from these environment variables:\n  \
                          ANTHROPIC_API_KEY   - Your Anthropic API key\n  \
                          TELEGRAM_BOT_TOKEN  - Your Telegram bot token\n  \
                          TELEGRAM_CHAT_IDS   - Comma-separated Telegram chat IDs\n\n{}",
@@ -109,15 +122,12 @@ impl Config {
         let yaml: YamlConfig = serde_yaml::from_str(&conf_str)
             .map_err(|e| anyhow!("Could not parse config from YAML file: {}", e))?;
 
-        // Read secrets from environment variables
-        let api_key = env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| anyhow!("Missing environment variable: ANTHROPIC_API_KEY"))?;
-
-        let telegram_bot_token = env::var("TELEGRAM_BOT_TOKEN")
-            .map_err(|_| anyhow!("Missing environment variable: TELEGRAM_BOT_TOKEN"))?;
-
-        let telegram_chat_ids_str = env::var("TELEGRAM_CHAT_IDS")
-            .map_err(|_| anyhow!("Missing environment variable: TELEGRAM_CHAT_IDS"))?;
+        // Read secrets from systemd credentials or fall back to environment variables
+        let api_key = read_secret("sonnets-anthropic-key", "ANTHROPIC_API_KEY")?;
+        let telegram_bot_token =
+            read_secret("sonnets-telegram-bot-token", "TELEGRAM_BOT_TOKEN")?;
+        let telegram_chat_ids_str =
+            read_secret("sonnets-telegram-chat-ids", "TELEGRAM_CHAT_IDS")?;
 
         let telegram_chat_ids: Vec<i64> = telegram_chat_ids_str
             .split(',')
