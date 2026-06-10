@@ -94,6 +94,9 @@ async fn generate_body(conf: &Config, nouns: &Option<String>) -> Result<Anthropi
         max_tokens: 1000u32,
         system: conf.system_prompt.clone(),
         messages,
+        output_config: OutputConfig {
+            effort: "low".to_string(),
+        },
     };
 
     // Put everything together into a higher struct
@@ -181,13 +184,16 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
     let batch_results = serde_json::from_value::<BatchResults>(res).map_err(|e| anyhow!("Could not deserialize the Anthropic response into a BatchResults struct: {}", e))?;
 
     // Get the actual sonnet from the BatchResults struct
-    // Check if the messages vec is not empty
-    let Some(message_content) = batch_results.result.message.content.get(0) else {
-        return Err(anyhow!("Could not get the actual sonnet from the BatchResults struct."))
+    // Check if the messages vec is not empty, and find the text block
+    let Some(message_content) = batch_results.result.message.content.iter().find(|c| matches!(c, MessageContent::Text { .. })) else {
+        return Err(anyhow!("Could not find a text content block in the Anthropic response."))
     };
 
     // Get the actual content
-    let content = message_content.text.to_owned();
+    let content = match message_content {
+        MessageContent::Text { text } => text.to_owned(),
+        _ => unreachable!(),
+    };
 
     // Get the author
     let author = batch_results.result.message.model.to_owned();
@@ -242,6 +248,12 @@ struct AnthropicRequestParams {
     model: String,
     system: String,
     messages: Vec<AnthropicRequestParamsMessage>,
+    output_config: OutputConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OutputConfig {
+    effort: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -279,8 +291,10 @@ struct Message {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct MessageContent {
-    text: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum MessageContent {
+    Text { text: String },
+    Thinking { thinking: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
