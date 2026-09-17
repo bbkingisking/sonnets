@@ -23,6 +23,7 @@ pub struct Config {
     pub db_path: PathBuf,
     pub nouns_path: PathBuf,
     pub system_prompt: String,
+    pub poetry_dir: Option<PathBuf>,
 }
 
 fn xdg_config_home() -> Result<PathBuf> {
@@ -41,16 +42,49 @@ fn xdg_data_home() -> Result<PathBuf> {
     Ok(home.join(".local").join("state"))
 }
 
-/// Read a secret from a systemd credential file if `$CREDENTIALS_DIRECTORY` is set,
+/// Read a setting from a systemd credential file if `$CREDENTIALS_DIRECTORY` is set,
 /// otherwise fall back to the given environment variable.
-fn read_secret(credential_name: &str, env_var: &str) -> Result<String> {
+///
+/// A missing value is not an error here; callers decide whether it is required.
+fn read_setting(credential_name: &str, env_var: &str) -> Result<Option<String>> {
     if let Ok(cred_dir) = env::var("CREDENTIALS_DIRECTORY") {
         let path = PathBuf::from(cred_dir).join(credential_name);
-        return fs::read_to_string(&path)
-            .map(|s| s.trim_end_matches('\n').trim_end_matches('\r').to_string())
-            .map_err(|e| anyhow!("Could not read credential file {:?}: {}", path, e));
+        return match fs::read_to_string(&path) {
+            Ok(value) => Ok(Some(
+                value
+                    .trim_end_matches('\n')
+                    .trim_end_matches('\r')
+                    .to_string(),
+            )),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(anyhow!(
+                "Could not read credential file {:?}: {}",
+                path,
+                error
+            )),
+        };
     }
-    env::var(env_var).map_err(|_| anyhow!("Missing environment variable: {}", env_var))
+
+    match env::var(env_var) {
+        Ok(value) => Ok(Some(value)),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(error) => Err(anyhow!(
+            "Could not read environment variable {}: {}",
+            env_var,
+            error
+        )),
+    }
+}
+
+/// Read a required secret from the configured credential source.
+fn read_secret(credential_name: &str, env_var: &str) -> Result<String> {
+    read_setting(credential_name, env_var)?.ok_or_else(|| {
+        anyhow!(
+            "Missing credential {} or environment variable {}",
+            credential_name,
+            env_var
+        )
+    })
 }
 
 impl Config {
@@ -80,9 +114,8 @@ impl Config {
         let conf_file = conf_dir.join("config.yaml");
 
         // Create config dir if needed
-        fs::create_dir_all(&conf_dir).map_err(|e| {
-            anyhow!("Could not create config dir at {:#?}: {}", &conf_dir, e)
-        })?;
+        fs::create_dir_all(&conf_dir)
+            .map_err(|e| anyhow!("Could not create config dir at {:#?}: {}", &conf_dir, e))?;
 
         // Create config file if it doesn't exist
         match fs::OpenOptions::new()
@@ -115,25 +148,28 @@ impl Config {
         }
 
         // Read and parse YAML config
-        let conf_str = fs::read_to_string(&conf_file).map_err(|e| {
-            anyhow!("Could not read config from {:#?}, {}", &conf_file, e)
-        })?;
+        let conf_str = fs::read_to_string(&conf_file)
+            .map_err(|e| anyhow!("Could not read config from {:#?}, {}", &conf_file, e))?;
 
         let yaml: YamlConfig = serde_yaml::from_str(&conf_str)
             .map_err(|e| anyhow!("Could not parse config from YAML file: {}", e))?;
 
         // Read secrets from systemd credentials or fall back to environment variables
         let api_key = read_secret("sonnets-anthropic-key", "ANTHROPIC_API_KEY")?;
-        let telegram_bot_token =
-            read_secret("sonnets-telegram-bot-token", "TELEGRAM_BOT_TOKEN")?;
-        let telegram_chat_ids_str =
-            read_secret("sonnets-telegram-chat-ids", "TELEGRAM_CHAT_IDS")?;
+        let telegram_bot_token = read_secret("sonnets-telegram-bot-token", "TELEGRAM_BOT_TOKEN")?;
+        let poetry_dir = read_setting("poetry-dir", "POETRY_DIR")?.map(PathBuf::from);
+        let telegram_chat_ids_str = read_secret("sonnets-telegram-chat-ids", "TELEGRAM_CHAT_IDS")?;
 
         let telegram_chat_ids: Vec<i64> = telegram_chat_ids_str
             .split(',')
             .map(|s| s.trim().parse::<i64>())
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| anyhow!("Could not parse TELEGRAM_CHAT_IDS as comma-separated i64s: {}", e))?;
+            .map_err(|e| {
+                anyhow!(
+                    "Could not parse TELEGRAM_CHAT_IDS as comma-separated i64s: {}",
+                    e
+                )
+            })?;
 
         // Derive state paths from XDG_DATA_HOME
         let state_dir = xdg_data_home()?.join(PKG_NAME);
@@ -149,6 +185,7 @@ impl Config {
             db_path,
             nouns_path,
             system_prompt: yaml.system_prompt,
+            poetry_dir,
         })
     }
 }
