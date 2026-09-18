@@ -1,6 +1,6 @@
 use crate::config::Config;
 use anyhow::{Result, anyhow};
-use log::info;
+use log::{debug, info};
 use reqwest::header::{self, HeaderValue};
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,7 @@ pub struct AnthropicResponseData {
 }
 
 pub async fn validate_anthropic_config(conf: &Config) -> Result<()> {
+    debug!("Validating Anthropic API key and model {:?}.", conf.model);
     let mut headers = header::HeaderMap::new();
 
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
@@ -45,6 +46,10 @@ pub async fn validate_anthropic_config(conf: &Config) -> Result<()> {
             ));
         }
     };
+    debug!(
+        "Anthropic model-list request returned HTTP {}.",
+        res.status()
+    );
 
     let valid_res = match res.error_for_status() {
         Ok(r) => {
@@ -68,6 +73,10 @@ pub async fn validate_anthropic_config(conf: &Config) -> Result<()> {
         Ok(v) => v,
         Err(e) => return Err(anyhow!("Could not deserialize Anthropic response: {}", e)),
     };
+    debug!(
+        "Anthropic returned {} available model(s).",
+        value_res.data.len()
+    );
 
     match value_res.data.iter().any(|item| item.id == conf.model) {
         true => info!("Anthropic model is valid."),
@@ -78,6 +87,7 @@ pub async fn validate_anthropic_config(conf: &Config) -> Result<()> {
 }
 
 pub async fn validate_telegram_config(conf: &Config) -> Result<()> {
+    debug!("Validating Telegram bot token with /getMe.");
     let url = format!(
         "https://api.telegram.org/bot{}/getMe",
         &conf.telegram_bot_token
@@ -93,6 +103,7 @@ pub async fn validate_telegram_config(conf: &Config) -> Result<()> {
             ));
         }
     };
+    debug!("Telegram /getMe request returned HTTP {}.", res.status());
 
     match res.error_for_status() {
         Ok(_) => info!("Telegram bot token is valid."),

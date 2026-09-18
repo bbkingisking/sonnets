@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::config::Config;
 use anyhow::{Result, anyhow};
 use chrono::{Local, NaiveDateTime};
-use log::info;
+use log::{debug, info, warn};
 use reqwest::{
     Client,
     header::{self, CONTENT_TYPE, HeaderValue},
@@ -18,8 +18,22 @@ pub async fn generate_sonnet(
     noun: Option<String>,
     inspiration: Option<String>,
 ) -> Result<Sonnet> {
+    debug!(
+        "Starting sonnet generation: noun_configured={}, inspiration_characters={:?}, model={:?}.",
+        noun.is_some(),
+        inspiration.as_ref().map(|text| text.len()),
+        conf.model
+    );
     // Generate the body for the request
     let body = generate_body(conf, noun.as_deref(), inspiration.as_deref());
+    debug!(
+        "Generated Anthropic batch request: requests={}, prompt_characters={:?}.",
+        body.requests.len(),
+        body.requests
+            .first()
+            .and_then(|request| request.params.messages.first())
+            .map(|message| message.content.len())
+    );
 
     // Construct headers
     let mut headers = header::HeaderMap::new();
@@ -49,15 +63,23 @@ pub async fn generate_sonnet(
             ));
         }
     };
+    debug!("Anthropic HTTP client constructed; submitting batch request.");
 
     // Post a request to the Batches API
-    let res = client
+    let response = client
         .post("https://api.anthropic.com/v1/messages/batches")
         .json(&body)
         .send()
-        .await?
-        .text()
         .await?;
+    debug!(
+        "Anthropic batch submission returned HTTP {}.",
+        response.status()
+    );
+    let res = response.text().await?;
+    debug!(
+        "Anthropic batch submission response contains {} characters.",
+        res.len()
+    );
 
     // Parse the response from Batches API
     let batch_response: BatchResponse = match serde_json::from_str(&res) {
@@ -70,6 +92,12 @@ pub async fn generate_sonnet(
             ));
         }
     };
+    debug!(
+        "Batch accepted: id={:?}, processing_status={:?}, results_url_present={}",
+        batch_response.id,
+        batch_response.processing_status,
+        batch_response.results_url.is_some()
+    );
 
     info!("Batch initialized succesfully, monitoring every 5 minutes for response now…");
     // Poll the Batches API until it is finished
@@ -97,6 +125,13 @@ fn generate_body(conf: &Config, noun: Option<&str>, inspiration: Option<&str>) -
         ));
     }
 
+    debug!(
+        "Building prompt: noun_included={}, inspiration_included={}, total_characters={}",
+        noun.is_some(),
+        inspiration.is_some(),
+        prompt.len()
+    );
+
     let messages = vec![AnthropicRequestParamsMessage {
         role: "user".to_string(),
         content: prompt,
@@ -105,7 +140,14 @@ fn generate_body(conf: &Config, noun: Option<&str>, inspiration: Option<&str>) -
     // Put everything together into a higher struct
     let params = AnthropicRequestParams {
         model: conf.model.clone(),
-        max_tokens: 1000u32,
+        // Adaptive thinking tokens count against this total. Leave enough room for
+        // both a short reasoning pass and the sonnet itself.
+        max_tokens: 2048u32,
+        // Claude Fable has adaptive thinking permanently enabled. Its depth is
+        // controlled with `output_config.effort`, rather than a thinking budget.
+        output_config: OutputConfig {
+            effort: "low".to_string(),
+        },
         system: conf.system_prompt.clone(),
         messages,
     };
@@ -121,6 +163,7 @@ fn generate_body(conf: &Config, noun: Option<&str>, inspiration: Option<&str>) -
 
 // After a batch is sent, poll until we get the result and convert it into a Sonnet
 async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) -> Result<Sonnet> {
+    debug!("Preparing to poll batch {:?}.", batch.id);
     // Construct headers
     let mut headers = header::HeaderMap::new();
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
@@ -156,6 +199,12 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
             ));
         }
     };
+    debug!(
+        "Batch {:?} ended with status {:?}; results_url_present={}",
+        batch_response.id,
+        batch_response.processing_status,
+        batch_response.results_url.is_some()
+    );
 
     // If we have exited the loop, it means the generation has ended. We can get the result now
     let Some(results_url) = &batch_response.results_url else {
@@ -163,13 +212,10 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
     };
 
     // Get the result as a generic JSON Value
-    let res: Value = client
-        .get(results_url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    debug!("Fetching completed batch results from {:?}.", results_url);
+    let response = client.get(results_url).send().await?;
+    debug!("Batch results request returned HTTP {}.", response.status());
+    let res: Value = response.error_for_status()?.json().await?;
 
     // Need to check if it has ended with a success or not
     let Some(r) = res.get("result") else {
@@ -187,7 +233,7 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
     };
 
     match s.as_str() {
-        Some("succeeded") => {}
+        Some("succeeded") => debug!("Batch result reports success."),
         _ => {
             return Err(anyhow!(
                 "The batch exited with a non-successful code, here is a dump of the result: {}",
@@ -205,19 +251,33 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
         )
     })?;
 
-    // Get the actual sonnet from the BatchResults struct
-    // Check if the messages vec is not empty
-    let Some(message_content) = batch_results.result.message.content.get(0) else {
+    // A response can begin with a thinking block. Select the visible text block
+    // rather than assuming the first block is text.
+    let Some(content) = batch_results
+        .result
+        .message
+        .content
+        .iter()
+        .find(|block| block.kind == "text")
+        .and_then(|block| block.text.as_deref())
+    else {
         return Err(anyhow!(
-            "Could not get the actual sonnet from the BatchResults struct."
+            "Batch succeeded but returned no text block (stop_reason: {:?}, output_tokens: {}).",
+            batch_results.result.message.stop_reason,
+            batch_results.result.message.usage.output_tokens,
         ));
     };
 
-    // Get the actual content
-    let content = message_content.text.to_owned();
-
     // Get the author
     let author = batch_results.result.message.model.to_owned();
+    debug!(
+        "Extracted sonnet text: author={:?}, content_characters={}, input_tokens={}, output_tokens={}, stop_reason={:?}.",
+        author,
+        content.len(),
+        batch_results.result.message.usage.input_tokens,
+        batch_results.result.message.usage.output_tokens,
+        batch_results.result.message.stop_reason
+    );
 
     // Set created_at to the current time
     let created_at: NaiveDateTime = Local::now().naive_local();
@@ -228,19 +288,29 @@ async fn poll_batch(batch: &BatchResponse, conf: &Config, noun: Option<String>) 
         author,
         prompt: conf.system_prompt.to_owned(),
         created_at,
-        content,
+        content: content.to_owned(),
         noun,
     })
 }
 
 async fn poll_until_complete(client: &reqwest::Client, url: &str) -> Result<BatchResponse> {
+    let mut poll_count = 0u32;
     loop {
+        poll_count += 1;
         let res: BatchResponse = client.get(url).send().await?.json().await?;
+        debug!(
+            "Batch poll #{}: id={:?}, status={:?}, results_url_present={}",
+            poll_count,
+            res.id,
+            res.processing_status,
+            res.results_url.is_some()
+        );
 
         if res.processing_status == "ended" {
             return Ok(res);
         }
 
+        warn!("Batch is still processing; next poll in 5 minutes.");
         sleep(Duration::from_mins(5)).await;
     }
 }
@@ -261,8 +331,14 @@ struct AnthropicRequest {
 struct AnthropicRequestParams {
     max_tokens: u32,
     model: String,
+    output_config: OutputConfig,
     system: String,
     messages: Vec<AnthropicRequestParamsMessage>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OutputConfig {
+    effort: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -296,12 +372,15 @@ struct MessageBatchResult {
 struct Message {
     model: String,
     usage: MessageUsage,
+    stop_reason: Option<String>,
     content: Vec<MessageContent>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct MessageContent {
-    text: String,
+    #[serde(rename = "type")]
+    kind: String,
+    text: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

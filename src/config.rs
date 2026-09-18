@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use log::info;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
 use std::process;
@@ -28,6 +28,7 @@ pub struct Config {
 
 fn xdg_config_home() -> Result<PathBuf> {
     if let Ok(val) = env::var("XDG_CONFIG_HOME") {
+        debug!("Using XDG_CONFIG_HOME for configuration: {:?}.", val);
         return Ok(PathBuf::from(val));
     }
     let home = env::home_dir().ok_or_else(|| anyhow!("Could not determine $HOME"))?;
@@ -36,6 +37,7 @@ fn xdg_config_home() -> Result<PathBuf> {
 
 fn xdg_data_home() -> Result<PathBuf> {
     if let Ok(val) = env::var("XDG_DATA_HOME") {
+        debug!("Using XDG_DATA_HOME for application state: {:?}.", val);
         return Ok(PathBuf::from(val));
     }
     let home = env::home_dir().ok_or_else(|| anyhow!("Could not determine $HOME"))?;
@@ -49,14 +51,27 @@ fn xdg_data_home() -> Result<PathBuf> {
 fn read_setting(credential_name: &str, env_var: &str) -> Result<Option<String>> {
     if let Ok(cred_dir) = env::var("CREDENTIALS_DIRECTORY") {
         let path = PathBuf::from(cred_dir).join(credential_name);
+        debug!(
+            "Looking for setting {:?} in credential file {:?}.",
+            credential_name, path
+        );
         return match fs::read_to_string(&path) {
-            Ok(value) => Ok(Some(
-                value
-                    .trim_end_matches('\n')
-                    .trim_end_matches('\r')
-                    .to_string(),
-            )),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Ok(value) => {
+                debug!(
+                    "Loaded setting {:?} from a credential file.",
+                    credential_name
+                );
+                Ok(Some(
+                    value
+                        .trim_end_matches('\n')
+                        .trim_end_matches('\r')
+                        .to_string(),
+                ))
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                debug!("Credential file for {:?} was not found.", credential_name);
+                Ok(None)
+            }
             Err(error) => Err(anyhow!(
                 "Could not read credential file {:?}: {}",
                 path,
@@ -66,8 +81,17 @@ fn read_setting(credential_name: &str, env_var: &str) -> Result<Option<String>> 
     }
 
     match env::var(env_var) {
-        Ok(value) => Ok(Some(value)),
-        Err(env::VarError::NotPresent) => Ok(None),
+        Ok(value) => {
+            debug!(
+                "Loaded setting {:?} from environment variable {}.",
+                credential_name, env_var
+            );
+            Ok(Some(value))
+        }
+        Err(env::VarError::NotPresent) => {
+            debug!("Setting {:?} is not configured.", credential_name);
+            Ok(None)
+        }
         Err(error) => Err(anyhow!(
             "Could not read environment variable {}: {}",
             env_var,
@@ -112,6 +136,7 @@ impl Config {
     pub fn load() -> Result<Self> {
         let conf_dir = xdg_config_home()?.join(PKG_NAME);
         let conf_file = conf_dir.join("config.yaml");
+        debug!("Loading configuration from {:?}.", conf_file);
 
         // Create config dir if needed
         fs::create_dir_all(&conf_dir)
@@ -124,6 +149,10 @@ impl Config {
             .open(&conf_file)
         {
             Ok(_) => {
+                debug!(
+                    "Created new configuration file at {:?}; displaying placeholder.",
+                    conf_file
+                );
                 if let Ok(placeholder) = Config::placeholder() {
                     println!(
                         "Created new config file at {:?}. Please populate it with the following fields:\n\n\
@@ -153,6 +182,10 @@ impl Config {
 
         let yaml: YamlConfig = serde_yaml::from_str(&conf_str)
             .map_err(|e| anyhow!("Could not parse config from YAML file: {}", e))?;
+        debug!(
+            "Parsed YAML configuration; configured model is {:?}.",
+            yaml.model
+        );
 
         // Read secrets from systemd credentials or fall back to environment variables
         let api_key = read_secret("sonnets-anthropic-key", "ANTHROPIC_API_KEY")?;
@@ -175,6 +208,10 @@ impl Config {
         let state_dir = xdg_data_home()?.join(PKG_NAME);
         let db_path = state_dir.join("sonnets.db");
         let nouns_path = state_dir.join("nouns.txt");
+        debug!(
+            "Derived state paths: database={:?}, nouns={:?}.",
+            db_path, nouns_path
+        );
 
         info!("Config loaded.");
         Ok(Config {

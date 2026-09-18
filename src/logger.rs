@@ -21,7 +21,6 @@ pub fn init_logger() -> Result<()> {
     let logs_path = xdg_state_home()?.join(PKG_NAME);
 
     let logs_file = logs_path.join(format!("{}.log", PKG_NAME));
-
     match fs::create_dir_all(&logs_path) {
         Ok(_) => (),
         Err(e) => {
@@ -34,7 +33,7 @@ pub fn init_logger() -> Result<()> {
     }
 
     match Ftail::new()
-        .single_file(&logs_file, true, LevelFilter::Info)
+        .single_file(&logs_file, true, LevelFilter::Debug)
         .init()
     {
         Ok(_) => {
