@@ -111,7 +111,7 @@ pub async fn generate_sonnet(
 
 // Helper to generate the JSON body for the request
 fn generate_body(conf: &Config, noun: Option<&str>, inspiration: Option<&str>) -> AnthropicBatch {
-    let mut prompt = String::from("Compose a sonnet.");
+    let mut prompt = String::from("Compose a poem.");
 
     if let Some(noun) = noun {
         prompt.push_str(&format!(
