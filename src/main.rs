@@ -1,7 +1,6 @@
 mod config;
 mod db;
 mod generate_sonnet;
-mod logger;
 mod nouns;
 mod poems;
 mod telegram;
@@ -10,7 +9,6 @@ mod validate;
 use crate::config::Config;
 use crate::db::Db;
 use crate::generate_sonnet::generate_sonnet;
-use crate::logger::init_logger;
 use crate::nouns::load_noun;
 use crate::poems::load_inspiration_poems;
 use crate::telegram::send_telegram_message;
@@ -21,7 +19,7 @@ use log::{debug, info};
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize the logger
-    init_logger()?;
+    colog::init();
     debug!("Logger setup complete; beginning configuration load.");
 
     // Load the configuration
