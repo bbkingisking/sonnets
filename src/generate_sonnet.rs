@@ -4,6 +4,7 @@ use crate::config::Config;
 use anyhow::{Result, anyhow};
 use chrono::{Local, NaiveDateTime};
 use log::{debug, info, warn};
+use rand::seq::SliceRandom;
 use reqwest::{
     Client,
     header::{self, CONTENT_TYPE, HeaderValue},
@@ -11,6 +12,8 @@ use reqwest::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::{sleep, timeout};
+
+const ALLOWED_FORMS: [&str; 8] = ["ballad", "epigram", "haiku", "sijo", "rubai", "heroic 10-line couplet", "terza rima", "limerick"];
 
 // Entry point
 pub async fn generate_sonnet(
@@ -124,6 +127,14 @@ fn generate_body(conf: &Config, noun: Option<&str>, inspiration: Option<&str>) -
             "\n\nThe following poems are provided solely as stylistic inspiration. Draw from their mood, voice, and techniques, but do not copy their wording, imagery, or structure.\n\n<inspiration_poems>\n{inspiration}\n</inspiration_poems>"
         ));
     }
+
+    let mut allowed_forms = ALLOWED_FORMS;
+    let mut rng = rand::rng();
+    allowed_forms.shuffle(&mut rng);
+    let random_form: &str = allowed_forms[0];
+    debug!("Random form was selected as: \"{}\"", random_form);
+
+    prompt.push_str(&format!("\n\nYou are writing in the {} form", random_form));
 
     debug!(
         "Building prompt: noun_included={}, inspiration_included={}, total_characters={}",
